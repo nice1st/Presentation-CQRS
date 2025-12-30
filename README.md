@@ -5,15 +5,20 @@
 ## 프레젠테이션 자료
 
 📊 **[`doc/PRESENTATION.md`](doc/PRESENTATION.md)** - 5단계 학습 시나리오 (발표용 스크립트)
+
 🧪 **[`doc/demo-script.http`](doc/demo-script.http)** - 실습 데모 시나리오 (IntelliJ HTTP Client)
 
 <details>
 <summary><b>📋 프레젠테이션 흐름 (5단계, 50분)</b></summary>
 
 **Step 1**: 통화 이력을 보고 싶다 → **Event Sourcing** 도입
+
 **Step 2**: 상태를 빠르게 조회하고 싶다 → **CQRS** (Read Model 분리)
+
 **Step 3**: 통화를 처리한 상담원을 알고 싶다 → **Participant 도메인** 추가
+
 **Step 4**: 상담원 상태를 추적하고 싶다 → **Extension Event Store** (CQRS + Event Sourcing)
+
 **Step 5**: 받은 이벤트로 서비스를 확장하고 싶다 → **이벤트 다중 구독**
 
 각 단계마다 "문제 → 고민 → 해결 → 결과" 과정으로 패턴을 자연스럽게 학습합니다.
@@ -38,7 +43,9 @@
 ## 구현 특징
 
 ✅ **3개 독립 도메인이 이벤트로만 통신** - Spring ApplicationEvent 활용, 도메인 간 직접 의존 제거
+
 ✅ **Event Sourcing + CQRS 동시 구현** - Call(Event Sourcing), Agent(CQRS + Event Sourcing), Participant(관계 추적)
+
 ✅ **프로덕션 수준 설계** - Payload 우선 전략, 멱등성 처리, 트랜잭션 분리, 성능 최적화
 
 ## 아키텍처 개요
