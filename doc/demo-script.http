@@ -1,0 +1,273 @@
+### Event Sourcing & CQRS 데모 스크립트
+### IntelliJ HTTP Client용
+### 프레젠테이션 순서대로 실행 (PRESENTATION.md 기준)
+
+###############################################
+# 📹 데모 1: Event Sourcing (Step 2 완료 후)
+###############################################
+
+### [데모1-1] 통화 요청 (REQUESTED)
+# → call_event_store 저장 (Event Store)
+# → CallView 생성 (Read Model)
+POST http://localhost:8090/api/calls/events/requested
+Content-Type: application/json
+
+{
+  "sessionId": "call-001",
+  "source": "customer-1",
+  "destination": "2001"
+}
+
+### [데모1-2] 통화 연결 (CONNECTED)
+# → call_event_store 저장
+# → CallView 업데이트 (status = ACTIVE)
+POST http://localhost:8090/api/calls/events/connected
+Content-Type: application/json
+
+{
+  "sessionId": "call-001"
+}
+
+### [데모1-3] 통화 종료 (DISCONNECTED)
+# → call_event_store 저장
+# → CallView 업데이트 (status = ENDED, duration 계산)
+POST http://localhost:8090/api/calls/events/disconnected
+Content-Type: application/json
+
+{
+  "sessionId": "call-001"
+}
+
+### [데모1-4] 확인 포인트 - Event Store (3개 이벤트 보존)
+# H2 Console에서 실행:
+# SELECT event_type, occurred_at FROM call_event_store
+# WHERE session_id = 'call-001' ORDER BY occurred_at;
+
+### [데모1-5] 확인 포인트 - Read Model (최종 상태)
+GET http://localhost:8090/api/calls/call-001
+
+### 💡 핵심: 이력(Event Store) + 빠른 조회(CallView) 분리
+
+###############################################
+# 📹 데모 2: CQRS + Event Sourcing (Step 4 완료 후)
+###############################################
+
+### [데모2-1] Agent 생성 (Alice)
+# → agent 저장 (Command Model)
+# → AgentView 생성 (Query Model, status = UNAVAILABLE)
+POST http://localhost:8090/api/agents
+Content-Type: application/json
+
+{
+  "name": "Alice",
+  "type": "HUMAN",
+  "extensionNumber": "1001"
+}
+
+### 👉 Response: {"id": 1}
+
+### [데모2-2] Extension Event - BUSY
+# → extension_event_store 저장 (Event Store)
+# → AgentView.status = BUSY
+POST http://localhost:8090/api/agents/events/busy
+Content-Type: application/json
+
+{
+  "extensionNumber": "1001",
+  "sessionId": "call-001"
+}
+
+### [데모2-3] Extension Event - AVAILABLE
+# → extension_event_store 저장
+# → AgentView.status = AVAILABLE
+POST http://localhost:8090/api/agents/events/available
+Content-Type: application/json
+
+{
+  "extensionNumber": "1001",
+  "sessionId": "call-001"
+}
+
+### [데모2-4] 확인 포인트 - Command Model (Agent 정보만)
+# H2 Console에서 실행:
+# SELECT name, type, extension_number FROM agent WHERE id = 1;
+
+### [데모2-5] 확인 포인트 - Event Store (Extension 이력)
+# H2 Console에서 실행:
+# SELECT event_type, occurred_at FROM extension_event_store
+# WHERE extension_number = '1001' ORDER BY occurred_at;
+
+### [데모2-6] 확인 포인트 - Query Model (상태 포함)
+GET http://localhost:8090/api/agents/1
+
+### 💡 핵심: Command/Query 분리 + Extension 이벤트 소싱
+
+###############################################
+# 📹 데모 3: 도메인 통합 (Step 5 완료 후)
+###############################################
+
+### [데모3-1] Agent 생성 (Bob, extension: 2001)
+POST http://localhost:8090/api/agents
+Content-Type: application/json
+
+{
+  "name": "Bob",
+  "type": "HUMAN",
+  "extensionNumber": "2001"
+}
+
+### 👉 Response: {"id": 2}
+
+### [데모3-2] Call 요청 (call-002, destination: 2001)
+POST http://localhost:8090/api/calls/events/requested
+Content-Type: application/json
+
+{
+  "sessionId": "call-002",
+  "source": "customer-2",
+  "destination": "2001"
+}
+
+### [데모3-3] Extension Event (BUSY, session: call-002)
+# → extension_event_store 저장
+# → AgentView.status = BUSY
+# → CallParticipant 생성 (agent: Bob, call: call-002, status: JOINED)
+POST http://localhost:8090/api/agents/events/busy
+Content-Type: application/json
+
+{
+  "extensionNumber": "2001",
+  "sessionId": "call-002"
+}
+
+### [데모3-4] Call 연결
+# → call_event_store 저장
+# → CallView.status = ACTIVE
+POST http://localhost:8090/api/calls/events/connected
+Content-Type: application/json
+
+{
+  "sessionId": "call-002"
+}
+
+### [데모3-5] Call 종료
+# → call_event_store 저장
+# → CallView.status = ENDED
+POST http://localhost:8090/api/calls/events/disconnected
+Content-Type: application/json
+
+{
+  "sessionId": "call-002"
+}
+
+### [데모3-6] Extension Event (AVAILABLE, session: call-002)
+# → extension_event_store 저장
+# → AgentView.status = AVAILABLE
+# → CallParticipant 종료 (status: LEFT)
+POST http://localhost:8090/api/agents/events/available
+Content-Type: application/json
+
+{
+  "extensionNumber": "2001",
+  "sessionId": "call-002"
+}
+
+### [데모3-7] 확인 포인트 - Agent → Call 조회
+GET http://localhost:8090/api/participants/agent/2
+
+### [데모3-8] 확인 포인트 - Call → Agent 조회
+GET http://localhost:8090/api/participants/call/call-002
+
+### [데모3-9] 확인 포인트 - SQL로 양방향 조회
+# H2 Console에서 실행:
+# -- Agent → Call 조회
+# SELECT cp.session_id, cp.joined_at, cv.status, cv.duration
+# FROM call_participant cp
+# JOIN call_view cv ON cp.session_id = cv.session_id
+# WHERE cp.agent_id = 2;
+#
+# -- Call → Agent 조회
+# SELECT cp.agent_id, av.name, cp.joined_at, cp.left_at
+# FROM call_participant cp
+# JOIN agent_view av ON cp.agent_id = av.agent_id
+# WHERE cp.session_id = 'call-002';
+
+### 💡 핵심: 3개 도메인이 이벤트로만 연결 (느슨한 결합)
+
+###############################################
+# 🔍 H2 Console 확인 (Event Replay 데모)
+###############################################
+
+### 👉 H2 Console 접속: http://localhost:8090/h2-console
+###    JDBC URL: jdbc:h2:mem:demo-cqrs
+###    Username: sa
+###    Password: (비워두기)
+
+### [H2-1] AgentView 삭제 (시뮬레이션)
+/*
+-- 현재 상태
+SELECT COUNT(*) FROM agent_view;  -- 2개 (Alice, Bob)
+
+-- AgentView 삭제
+DELETE FROM agent_view;
+
+-- Event Store는 그대로
+SELECT COUNT(*) FROM extension_event_store;  -- 이벤트 보존됨
+*/
+
+### [H2-2] Event Replay로 AgentView 재구축
+/*
+-- Extension Event Store에서 순서대로 읽기
+SELECT event_type, extension_number, occurred_at
+FROM extension_event_store
+ORDER BY occurred_at;
+
+-- (실제 재구축은 코드에서 이벤트 리플레이 로직 필요)
+-- 데모에서는 "Event Store만 있으면 재구축 가능" 개념 설명
+*/
+
+### [H2-3] 3개 Event Store 확인
+/*
+-- Call Event Store
+SELECT COUNT(*) FROM call_event_store;
+
+-- Extension Event Store
+SELECT COUNT(*) FROM extension_event_store;
+
+-- 모든 이벤트 보존 → 시간 여행 가능
+*/
+
+###############################################
+# 📋 프레젠테이션 체크리스트
+###############################################
+
+### ✅ 데모 1 (Step 2): Event Sourcing
+###    - call_event_store 3개 이벤트 보존 확인
+###    - call_view 최종 상태 확인
+###    - 이력 vs 조회 분리 설명
+
+### ✅ 데모 2 (Step 4): CQRS + Event Sourcing
+###    - agent (Command): status 없음
+###    - extension_event_store: Extension 이벤트 이력
+###    - agent_view (Query): status 포함
+
+### ✅ 데모 3 (Step 5): 도메인 통합
+###    - Extension Event로 3개 도메인 연결
+###    - CallParticipant 자동 생성/종료
+###    - 양방향 조회 (Agent ↔ Call)
+
+### ✅ H2 Console: Event Replay
+###    - AgentView 삭제 시뮬레이션
+###    - Event Store 보존 확인
+###    - 재구축 가능성 설명
+
+###############################################
+# 🧪 테스트 실행 가이드
+###############################################
+
+### 터미널에서 실행:
+### ./gradlew test
+### ./gradlew test --tests "demo.cqrs.call.CallEventSourcingTest"
+### ./gradlew test --tests "demo.cqrs.agent.AgentCqrsTest"
+### ./gradlew test --tests "demo.cqrs.participant.ParticipantIntegrationTest"
+
