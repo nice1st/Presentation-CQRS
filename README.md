@@ -162,3 +162,4 @@ src/main/java/demo/cqrs/
 - `call_view`, `agent_view`: Read Model (조회 최적화)
 - `agent`: Command Model
 - `call_participant`: Agent-Call 관계 추적
+ 
